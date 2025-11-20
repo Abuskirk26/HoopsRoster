@@ -9,31 +9,40 @@ import Scoreboard from './components/Scoreboard';
 import { generateInviteMessage } from './services/geminiService';
 import { syncRosterFromSheet, initializeSheet, updatePlayerStatusOnSheet, resetWeekOnSheet, createPlayerOnSheet, updatePlayerDetailsOnSheet, getPlayerStats, deletePlayerOnSheet } from './services/sheetService';
 import { Calendar, Users, Trophy, Share2, MessageSquare, Lock, Shield, LogOut, Database, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, UserPlus, Search, BarChart3, History, FilterX, ChevronRight, Send, XCircle, MonitorPlay, Trash } from 'lucide-react';
-import { format, nextMonday, startOfToday, getDay } from 'date-fns';
+import { format, getDay } from 'date-fns';
 
-// UPDATED VERSION to v5 to force clear old local storage (and old PINs)
-const STORAGE_KEY_PLAYERS = 'hoops_players_data_v5';
-const STORAGE_KEY_USER = 'hoops_current_user_v5';
-// Use a stable key for config so we don't lose the DB URL on updates
+// UPDATED VERSION to v6 to force clear old local storage
+const STORAGE_KEY_PLAYERS = 'hoops_players_data_v6';
+const STORAGE_KEY_USER = 'hoops_current_user_v6';
 const STORAGE_KEY_CONFIG = 'hoops_app_config_stable';
+
+// Your Hardcoded Google Script URL
+const HARDCODED_DB_URL = "https://script.google.com/macros/s/AKfycbxCJPa_Nu1CJXSw8sU8aPHly5sBADZAwn3NgK5MNKeQ73qzzPDLDyx00o4JkeMm97O1oQ/exec";
+
+// Helper to calculate the next Monday (or today if it is Monday)
+const getNextGameDate = () => {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (8 - day) % 7; // 0 if Monday, 1 if Sunday, 6 if Tuesday
+  d.setDate(d.getDate() + diff);
+  return d;
+};
 
 export const App: React.FC = () => {
   // --- STATE ---
   
   const [config, setConfig] = useState<AppConfig>(() => {
     try {
-      // Try stable key first
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
-      if (saved) return JSON.parse(saved);
-
-      // Migration: Try to recover from v3 or v2 if stable is empty
-      const v3 = localStorage.getItem('hoops_app_config_v3');
-      if (v3) return JSON.parse(v3);
-      const v2 = localStorage.getItem('hoops_app_config_v2');
-      if (v2) return JSON.parse(v2);
-
-      return {};
-    } catch { return {}; }
+      const parsed = saved ? JSON.parse(saved) : {};
+      // Force the hardcoded URL if it's missing
+      if (!parsed.googleSheetUrl) {
+        return { ...parsed, googleSheetUrl: HARDCODED_DB_URL };
+      }
+      return parsed;
+    } catch { 
+      return { googleSheetUrl: HARDCODED_DB_URL }; 
+    }
   });
 
   const [players, setPlayers] = useState<Player[]>(() => {
@@ -46,8 +55,7 @@ export const App: React.FC = () => {
   });
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
-    // Try v5, if not, check v4 to keep them logged in during migration
-    return localStorage.getItem(STORAGE_KEY_USER) || localStorage.getItem('hoops_current_user_v4');
+    return localStorage.getItem(STORAGE_KEY_USER);
   });
 
   const [activeTab, setActiveTab] = useState<'roster' | 'admin' | 'scoreboard'>('roster');
@@ -132,7 +140,6 @@ export const App: React.FC = () => {
       setPlayers(remotePlayers);
       setSyncStatus('success');
     } else {
-      // Only show error if we have players to begin with, otherwise it might just be first load
       if (players.length > 0) setSyncStatus('error');
     }
     setIsSyncing(false);
@@ -302,7 +309,7 @@ export const App: React.FC = () => {
 
   const handleShare = async () => {
     if (!inviteMessage) {
-        const msg = await generateInviteMessage(format(nextMonday(startOfToday()), 'MMMM do'));
+        const msg = await generateInviteMessage(format(getNextGameDate(), 'MMMM do'));
         setInviteMessage(msg);
         triggerShare(msg);
     } else {
@@ -370,8 +377,11 @@ export const App: React.FC = () => {
          return;
       }
 
-      // Scenario B: Validate PIN (Trim whitespace just in case)
-      if (enteredPin.trim() === pendingLoginPlayer.pin?.trim()) {
+      // Scenario B: Validate PIN (Check for both number and string types)
+      const inputPin = String(enteredPin).trim();
+      const storedPin = String(pendingLoginPlayer.pin).trim();
+
+      if (inputPin === storedPin) {
          setCurrentUserId(pendingLoginPlayer.id);
          setPendingLoginPlayer(null);
       } else {
@@ -424,7 +434,7 @@ export const App: React.FC = () => {
   const confirmedCount = players.filter(p => p.status === PlayerStatus.IN).length;
   const waitlistCount = players.filter(p => p.status === PlayerStatus.WAITLIST).length;
   const pendingCount = players.length - confirmedCount - waitlistCount;
-  const formattedDate = format(nextMonday(startOfToday()), 'MMMM do');
+  const formattedDate = format(getNextGameDate(), 'MMMM do');
   const isAtCapacity = confirmedCount >= MAX_PLAYERS;
 
   // --- LOGIN SCREEN ---
