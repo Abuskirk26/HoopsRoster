@@ -11,9 +11,9 @@ import { syncRosterFromSheet, initializeSheet, updatePlayerStatusOnSheet, resetW
 import { Calendar, Users, Trophy, Share2, MessageSquare, Lock, Shield, LogOut, Database, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, UserPlus, Search, BarChart3, History, FilterX, ChevronRight, Send, XCircle, MonitorPlay, Trash } from 'lucide-react';
 import { format, nextMonday, startOfToday, getDay } from 'date-fns';
 
-// UPDATED VERSION to v4 to force clear old local storage
-const STORAGE_KEY_PLAYERS = 'hoops_players_data_v4';
-const STORAGE_KEY_USER = 'hoops_current_user_v4';
+// UPDATED VERSION to v5 to force clear old local storage (and old PINs)
+const STORAGE_KEY_PLAYERS = 'hoops_players_data_v5';
+const STORAGE_KEY_USER = 'hoops_current_user_v5';
 // Use a stable key for config so we don't lose the DB URL on updates
 const STORAGE_KEY_CONFIG = 'hoops_app_config_stable';
 
@@ -46,8 +46,8 @@ export const App: React.FC = () => {
   });
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
-    // Try v4, if not, check v3 to keep them logged in during migration
-    return localStorage.getItem(STORAGE_KEY_USER) || localStorage.getItem('hoops_current_user_v3');
+    // Try v5, if not, check v4 to keep them logged in during migration
+    return localStorage.getItem(STORAGE_KEY_USER) || localStorage.getItem('hoops_current_user_v4');
   });
 
   const [activeTab, setActiveTab] = useState<'roster' | 'admin' | 'scoreboard'>('roster');
@@ -370,8 +370,8 @@ export const App: React.FC = () => {
          return;
       }
 
-      // Scenario B: Validate PIN
-      if (enteredPin === pendingLoginPlayer.pin) {
+      // Scenario B: Validate PIN (Trim whitespace just in case)
+      if (enteredPin.trim() === pendingLoginPlayer.pin?.trim()) {
          setCurrentUserId(pendingLoginPlayer.id);
          setPendingLoginPlayer(null);
       } else {
