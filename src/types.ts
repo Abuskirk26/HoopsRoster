@@ -1,4 +1,3 @@
-
 export enum Tier {
   ONE = 1,
   TWO = 2,
@@ -19,8 +18,8 @@ export interface Player {
   status: PlayerStatus;
   phoneNumber: string;
   email?: string;
-  pin?: string; // 4-digit security pin
-  timestamp?: number; // When they signed up
+  pin?: string;
+  timestamp?: number;
   isAdmin?: boolean;
 }
 

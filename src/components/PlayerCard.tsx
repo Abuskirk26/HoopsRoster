@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Player, PlayerStatus, Tier } from '../types';
 import { User, Check, X, Clock, ShieldCheck, Phone, Mail, Pencil } from 'lucide-react';

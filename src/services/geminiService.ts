@@ -1,17 +1,11 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Player, GeneratedTeams } from "../types";
 
-// Note: When deploying, use import.meta.env.VITE_GEMINI_API_KEY or process.env
-// For this demo, we assume the environment variable is available.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
-const ai = new GoogleGenAI({ apiKey });
+// Note: API Key is injected via vite.config.ts define
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateBalancedTeams = async (players: Player[]): Promise<GeneratedTeams> => {
-  if (!apiKey) throw new Error("API Key missing");
-  if (players.length < 2) {
-    throw new Error("Not enough players to generate teams.");
-  }
+  if (players.length < 2) throw new Error("Not enough players to generate teams.");
 
   const playerNames = players.map(p => `${p.name} (Tier ${p.tier})`).join(", ");
 
@@ -32,20 +26,9 @@ export const generateBalancedTeams = async (players: Player[]): Promise<Generate
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            teamA: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "List of player names for Team A"
-            },
-            teamB: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "List of player names for Team B"
-            },
-            strategy: {
-              type: Type.STRING,
-              description: "A short hype description of the matchup"
-            }
+            teamA: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of player names for Team A" },
+            teamB: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of player names for Team B" },
+            strategy: { type: Type.STRING, description: "A short hype description of the matchup" }
           },
           required: ["teamA", "teamB", "strategy"]
         }
@@ -53,9 +36,7 @@ export const generateBalancedTeams = async (players: Player[]): Promise<Generate
     });
 
     const text = response.text;
-    if (!text) {
-      throw new Error("No response from AI");
-    }
+    if (!text) throw new Error("No response from AI");
     return JSON.parse(text) as GeneratedTeams;
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -64,7 +45,6 @@ export const generateBalancedTeams = async (players: Player[]): Promise<Generate
 };
 
 export const generateInviteMessage = async (nextGameDate: string): Promise<string> => {
-  if (!apiKey) return "Monday Hoops! Who's in?";
   const prompt = `
     Write a short, energetic, funny 1-sentence text message inviting a group of friends to basketball this Monday (${nextGameDate}).
     Include a basketball emoji.

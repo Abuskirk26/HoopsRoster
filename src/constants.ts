@@ -1,11 +1,8 @@
-
 import { Player, PlayerStatus, Tier, PlayerStats } from './types';
 
 export const MAX_PLAYERS = 12;
 
-// Generate 30 mock players with valid xxx-xxx-xxxx phones and PINs
 export const INITIAL_PLAYERS: Player[] = [
-  // Tier 1 (10 players)
   { id: '1', name: 'LeBron J.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, isAdmin: true, phoneNumber: '555-555-0101', pin: '1111', email: 'king@hoops.com' },
   { id: '2', name: 'Steph C.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0102', pin: '3030' },
   { id: '3', name: 'Kevin D.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0103', pin: '3535' },
@@ -16,8 +13,6 @@ export const INITIAL_PLAYERS: Player[] = [
   { id: '8', name: 'Joel E.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0108', pin: '2121' },
   { id: '9', name: 'Jimmy B.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0109', pin: '2222' },
   { id: '10', name: 'Kawhi L.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0110', pin: '0202' },
-
-  // Tier 2 (10 players)
   { id: '11', name: 'Paul G.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0111', pin: '1313' },
   { id: '12', name: 'Damian L.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0112', pin: '0000' },
   { id: '13', name: 'Kyrie I.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0113', pin: '1111' },
@@ -28,8 +23,6 @@ export const INITIAL_PLAYERS: Player[] = [
   { id: '18', name: 'DeAaron F.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0118', pin: '0505' },
   { id: '19', name: 'Jaylen B.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0119', pin: '0707' },
   { id: '20', name: 'Trae Y.', tier: Tier.TWO, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0120', pin: '1111' },
-
-  // Tier 3 (10 players)
   { id: '21', name: 'Zion W.', tier: Tier.THREE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0121', pin: '1111' },
   { id: '22', name: 'Ja M.', tier: Tier.THREE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0122', pin: '1111' },
   { id: '23', name: 'LaMelo B.', tier: Tier.THREE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0123', pin: '1111' },
@@ -42,7 +35,6 @@ export const INITIAL_PLAYERS: Player[] = [
   { id: '30', name: 'Evan M.', tier: Tier.THREE, status: PlayerStatus.UNKNOWN, phoneNumber: '555-555-0130', pin: '1111' },
 ];
 
-// Mock Data for Admin Reports (Used when no backend is connected)
 export const MOCK_PLAYER_STATS: PlayerStats[] = [
   { id: '1', name: 'LeBron J.', gamesPlayed: 42, tier: Tier.ONE },
   { id: '2', name: 'Steph C.', gamesPlayed: 40, tier: Tier.ONE },

@@ -2,23 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
 display: none;
 }
-/* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
--ms-overflow-style: none;  /* IE and Edge */
-scrollbar-width: none;  /* Firefox */
+-ms-overflow-style: none;
+scrollbar-width: none;
 }
-/* Safe area padding for notched phones */
 .pt-safe-top {
 padding-top: env(safe-area-inset-top);
 }
 .pb-safe-bottom {
 padding-bottom: env(safe-area-inset-bottom);
 }
-/* Prevent pull-to-refresh on mobile */
 body {
 overscroll-behavior-y: none;
 }

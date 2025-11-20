@@ -1,4 +1,3 @@
-
 import { Player, PlayerStatus, PlayerStats } from '../types';
 import { MOCK_PLAYER_STATS } from '../constants';
 
@@ -6,9 +5,7 @@ export const syncRosterFromSheet = async (url: string): Promise<Player[] | null>
   try {
     const response = await fetch(url, { method: 'GET' });
     const json = await response.json();
-    if (json.status === 'success' && Array.isArray(json.data)) {
-      return json.data;
-    }
+    if (json.status === 'success' && Array.isArray(json.data)) return json.data;
     return null;
   } catch (error) {
     console.error("Failed to fetch roster:", error);
@@ -16,20 +13,31 @@ export const syncRosterFromSheet = async (url: string): Promise<Player[] | null>
   }
 };
 
-export const getPlayerStats = async (url: string): Promise<PlayerStats[] | null> => {
-  if (!url) {
-      return new Promise((resolve) => {
-          setTimeout(() => resolve(MOCK_PLAYER_STATS), 800);
-      });
+export const getGameScore = async (url: string): Promise<{scoreA: number, scoreB: number} | null> => {
+  if (!url) return { scoreA: 0, scoreB: 0 };
+  try {
+    const separator = url.includes('?') ? '&' : '?';
+    const response = await fetch(`${url}${separator}action=GET_SCORE`, { method: 'GET' });
+    const json = await response.json();
+    if (json.status === 'success') return { scoreA: json.scoreA, scoreB: json.scoreB };
+    return null;
+  } catch (error) {
+    return null;
   }
+};
 
+export const updateGameScore = async (url: string, scoreA: number, scoreB: number, actorName: string) => {
+  if (!url) return;
+  await sendPost(url, { action: 'UPDATE_SCORE', scoreA: scoreA, scoreB: scoreB, actor: actorName });
+};
+
+export const getPlayerStats = async (url: string): Promise<PlayerStats[] | null> => {
+  if (!url) return new Promise((resolve) => { setTimeout(() => resolve(MOCK_PLAYER_STATS), 800); });
   try {
     const separator = url.includes('?') ? '&' : '?';
     const response = await fetch(`${url}${separator}action=GET_STATS`, { method: 'GET' });
     const json = await response.json();
-    if (json.status === 'success' && Array.isArray(json.stats)) {
-      return json.stats;
-    }
+    if (json.status === 'success' && Array.isArray(json.stats)) return json.stats;
     return null;
   } catch (error) {
     return MOCK_PLAYER_STATS;
@@ -62,12 +70,7 @@ export const resetWeekOnSheet = async (url: string, actorName: string, shouldArc
 
 const sendPost = async (url: string, data: any) => {
   try {
-    await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(data),
-      mode: 'no-cors', 
-      headers: { 'Content-Type': 'application/json' },
-    });
+    await fetch(url, { method: 'POST', body: JSON.stringify(data), mode: 'no-cors', headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error("API Error", error);
     throw error;
