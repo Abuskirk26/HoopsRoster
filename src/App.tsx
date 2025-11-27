@@ -8,8 +8,8 @@ import PlayerForm from './components/PlayerForm';
 import Scoreboard from './components/Scoreboard';
 import { generateInviteMessage } from './services/geminiService';
 import { syncRosterFromSheet, initializeSheet, updatePlayerStatusOnSheet, resetWeekOnSheet, createPlayerOnSheet, updatePlayerDetailsOnSheet, getPlayerStats, deletePlayerOnSheet } from './services/sheetService';
-import { Calendar, Users, Trophy, Share2, MessageSquare, Lock, Shield, LogOut, Database, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, UserPlus, Search, BarChart3, History, FilterX, ChevronRight, Send, XCircle, MonitorPlay, Trash } from 'lucide-react';
-import { format, getDay } from 'date-fns';
+import { Calendar, Users, Trophy, Share2, MessageSquare, Lock, Shield, LogOut, Database, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, UserPlus, Search, BarChart3, History, FilterX, ChevronRight, Send, XCircle, MonitorPlay, Trash, UserCog, User, Check } from 'lucide-react';
+import { format } from 'date-fns';
 
 // UPDATED VERSION to v6 to force clear old local storage
 const STORAGE_KEY_PLAYERS = 'hoops_players_data_v6';
@@ -68,6 +68,11 @@ export const App: React.FC = () => {
   const [pendingLoginPlayer, setPendingLoginPlayer] = useState<Player | null>(null);
   const [enteredPin, setEnteredPin] = useState("");
   const [authError, setAuthError] = useState("");
+  
+  // PIN Reset Modal
+  const [showPinReset, setShowPinReset] = useState(false);
+  const [resetPhoneNumber, setResetPhoneNumber] = useState("");
+  const [resetError, setResetError] = useState("");
   
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
@@ -184,23 +189,6 @@ export const App: React.FC = () => {
   const handleStatusChange = (id: string, newStatus: PlayerStatus) => {
     const actingUser = currentUser?.name || "Unknown";
     const timestamp = Date.now();
-    const player = players.find(p => p.id === id);
-
-    // --- TIME CONSTRAINT LOGIC ---
-    if (player && newStatus === PlayerStatus.IN) {
-      // Admins bypass checks
-      if (!isAdmin) {
-         const today = new Date();
-         const dayOfWeek = getDay(today); // 0=Sun, 1=Mon, 2=Tue...
-         
-         // Tier 2 & 3 can only sign up on Monday (1)
-         if (player.tier !== Tier.ONE && dayOfWeek !== 1) {
-            showToast(`Tier ${player.tier} invites open on Monday!`, 'error');
-            return;
-         }
-      }
-    }
-    // -----------------------------
 
     setPlayers(prev => {
       const withUpdatedIntent = prev.map(p => {
@@ -276,18 +264,19 @@ export const App: React.FC = () => {
   };
 
   const handlePlayerDelete = (playerId: string) => {
-      if (!window.confirm("Are you sure you want to delete this player? This action cannot be undone.")) return;
+      const isCurrentUser = playerId === currentUserId;
+      const actor = currentUser?.name || (isCurrentUser ? "Self" : "Admin");
       
       setPlayers(prev => prev.filter(p => p.id !== playerId));
       setShowPlayerForm(false);
       showToast("Player deleted", 'info');
       
       if (config.googleSheetUrl) {
-          deletePlayerOnSheet(config.googleSheetUrl, playerId, currentUser?.name || "Admin");
+          deletePlayerOnSheet(config.googleSheetUrl, playerId, actor);
       }
 
       // If user deleted themselves, log out
-      if (playerId === currentUserId) {
+      if (isCurrentUser) {
           setCurrentUserId(null);
       }
   };
@@ -389,6 +378,40 @@ export const App: React.FC = () => {
       }
   };
 
+  const handleForgotPin = () => {
+      if (!pendingLoginPlayer) return;
+      setShowPinReset(true);
+      setResetPhoneNumber("");
+      setResetError("");
+  };
+
+  const handlePinReset = () => {
+      if (!pendingLoginPlayer) return;
+      
+      const rawPhone = resetPhoneNumber.replace(/\D/g, '');
+      const storedPhone = (pendingLoginPlayer.phoneNumber || '').replace(/\D/g, '');
+      
+      if (rawPhone.length !== 10) {
+         setResetError("Please enter a valid 10-digit phone number");
+         return;
+      }
+      
+      if (rawPhone !== storedPhone) {
+         setResetError("Phone number doesn't match our records");
+         return;
+      }
+      
+      // Phone verified, let them reset PIN (clear old PIN for security)
+      const playerForReset = { ...pendingLoginPlayer, pin: '' };
+      setShowPinReset(false);
+      setEditingPlayer(playerForReset);
+      setIsSignUpMode(false);
+      setShowPlayerForm(true);
+      // Clear pending player after form opens
+      setTimeout(() => setPendingLoginPlayer(null), 100);
+      showToast("Phone verified! Please set your new PIN", "success");
+  };
+
   const handleInitializeDatabase = async () => {
     if (!config.googleSheetUrl) return;
     if (!window.confirm("Overwrite Google Sheet with current app data?")) return;
@@ -482,6 +505,13 @@ export const App: React.FC = () => {
                       </button>
                       
                       <button 
+                         onClick={handleForgotPin}
+                         className="w-full text-orange-400 hover:text-orange-300 text-sm py-2 font-medium"
+                      >
+                         Forgot PIN?
+                      </button>
+                      
+                      <button 
                          onClick={() => {
                              setPendingLoginPlayer(null);
                              setAuthError("");
@@ -490,6 +520,64 @@ export const App: React.FC = () => {
                          className="w-full text-gray-500 hover:text-gray-300 text-sm py-2"
                       >
                          Cancel
+                      </button>
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* PIN RESET MODAL */}
+          {showPinReset && pendingLoginPlayer && (
+             <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-900/95 backdrop-blur-sm animate-fade-in">
+                <div className="bg-gray-800 w-full max-w-xs p-6 rounded-2xl border border-gray-700 shadow-2xl">
+                   <div className="text-center mb-6">
+                      <div className="w-16 h-16 bg-gray-700 rounded-full mx-auto mb-3 flex items-center justify-center">
+                         <AlertCircle className="w-8 h-8 text-orange-500" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white">Reset PIN</h3>
+                      <p className="text-sm text-gray-400 mt-1">{pendingLoginPlayer.name}</p>
+                      <p className="text-xs text-gray-500 mt-2">Verify your phone number to reset your PIN</p>
+                   </div>
+                   
+                   <div className="space-y-4">
+                      <input 
+                         type="tel" 
+                         inputMode="numeric"
+                         autoFocus
+                         value={resetPhoneNumber}
+                         onChange={(e) => {
+                             const digits = e.target.value.replace(/\D/g, '');
+                             const limited = digits.slice(0, 10);
+                             let formatted = limited;
+                             if (limited.length > 6) {
+                                formatted = `${limited.slice(0, 3)}-${limited.slice(3, 6)}-${limited.slice(6)}`;
+                             } else if (limited.length > 3) {
+                                formatted = `${limited.slice(0, 3)}-${limited.slice(3)}`;
+                             }
+                             setResetPhoneNumber(formatted);
+                             setResetError("");
+                         }}
+                         className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-center text-lg text-white focus:ring-2 focus:ring-orange-500 outline-none"
+                         placeholder="123-456-7890"
+                      />
+                      {resetError && <p className="text-center text-red-400 text-xs font-bold">{resetError}</p>}
+                      
+                      <button 
+                         onClick={handlePinReset}
+                         className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-colors"
+                      >
+                         Verify & Reset PIN
+                      </button>
+                      
+                      <button 
+                         onClick={() => {
+                             setShowPinReset(false);
+                             setResetError("");
+                             setResetPhoneNumber("");
+                         }}
+                         className="w-full text-gray-500 hover:text-gray-300 text-sm py-2"
+                      >
+                         Back
                       </button>
                    </div>
                 </div>
@@ -600,6 +688,9 @@ export const App: React.FC = () => {
                    {confirmedCount}<span className="text-gray-500">/{MAX_PLAYERS}</span>
                 </div>
              </div>
+             <button onClick={() => handleOpenEdit(currentUser!)} className="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white border border-gray-700 transition-colors" title="Edit Profile">
+                <UserCog className="w-4 h-4" />
+             </button>
              <button onClick={() => setCurrentUserId(null)} className="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white border border-gray-700 transition-colors">
                 <LogOut className="w-4 h-4" />
              </button>
@@ -763,12 +854,31 @@ export const App: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-gray-800/30 rounded-2xl p-8 text-center border border-gray-700/50 border-dashed">
-                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                        <Lock className="w-6 h-6 text-gray-500" />
+                <div className="animate-fade-in pb-20">
+                    <div className="flex justify-between items-center mb-3 ml-1">
+                        <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                            Who's Playing 🏀
+                        </h3>
                     </div>
-                    <h3 className="text-gray-200 font-bold mb-1">Roster Hidden</h3>
-                    <p className="text-sm text-gray-500 max-w-[200px] mx-auto leading-relaxed">Only admins can view the full player list.</p>
+                    <div className="space-y-2">
+                        {sortedPlayers.filter(p => p.status === PlayerStatus.IN).length > 0 ? (
+                           sortedPlayers.filter(p => p.status === PlayerStatus.IN).map(player => (
+                              <div key={player.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-800 bg-gray-800/40">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-700">
+                                    <User className="w-4 h-4 text-gray-400" />
+                                  </div>
+                                  <span className="text-gray-200 font-semibold">{player.name}</span>
+                                </div>
+                                <Check className="w-5 h-5 text-green-400" />
+                              </div>
+                           ))
+                        ) : (
+                           <div className="text-center py-8 text-gray-500 bg-gray-800/20 rounded-xl border border-gray-700/50 border-dashed">
+                              No confirmed players yet
+                           </div>
+                        )}
+                    </div>
                     <div className="mt-8">
                        <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-2 font-bold">Live Capacity</p>
                        <div className="flex justify-center gap-1.5 flex-wrap max-w-[180px] mx-auto">
@@ -876,33 +986,41 @@ export const App: React.FC = () => {
                     </div>
 
                     {playerStats.length > 0 ? (
-                       <div className="overflow-hidden rounded-lg border border-gray-700">
-                          <table className="w-full text-left text-xs">
-                             <thead className="bg-gray-700/50 text-gray-400 uppercase">
-                                <tr>
-                                   <th className="px-3 py-2">Name</th>
-                                   <th className="px-3 py-2 text-center">Tier</th>
-                                   <th className="px-3 py-2 text-right">Games</th>
-                                </tr>
-                             </thead>
-                             <tbody className="divide-y divide-gray-700">
-                                {playerStats.slice(0, 10).map(stat => (
-                                   <tr key={stat.id} className="hover:bg-gray-700/30">
-                                      <td className="px-3 py-2 text-gray-200">{stat.name}</td>
-                                      <td className="px-3 py-2 text-center">
-                                         <span className={`px-1.5 py-0.5 rounded text-[10px] border ${
-                                            stat.tier === Tier.ONE ? 'border-yellow-500 text-yellow-500' : 
-                                            stat.tier === Tier.TWO ? 'border-blue-500 text-blue-500' : 
-                                            'border-gray-500 text-gray-500'
-                                         }`}>T{stat.tier}</span>
-                                      </td>
-                                      <td className="px-3 py-2 text-right font-mono text-gray-300">{stat.gamesPlayed}</td>
-                                   </tr>
-                                ))}
-                             </tbody>
-                          </table>
-                          <div className="bg-gray-700/30 p-2 text-center text-[10px] text-gray-500 italic">
-                             Top 10 most frequent players
+                       <div className="space-y-4">
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase mb-3 font-bold">Attendance by Player (Total Games)</p>
+                            <div className="space-y-2">
+                              {playerStats.slice(0, 10).map(stat => (
+                                <div key={stat.id} className="flex items-center gap-3">
+                                  <div className="w-20 text-xs text-gray-400 truncate">{stat.name}</div>
+                                  <div className="flex-1 bg-gray-700/50 rounded-full h-6 flex items-center overflow-hidden relative">
+                                    <div 
+                                      className="bg-gradient-to-r from-green-600 to-green-500 h-full rounded-full transition-all"
+                                      style={{width: `${Math.min(100, (stat.gamesPlayed / Math.max(...playerStats.map(s => s.gamesPlayed))) * 100)}%`}}
+                                    />
+                                    <span className="absolute right-2 text-xs font-bold text-white">{stat.gamesPlayed}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="border-t border-gray-700 pt-4">
+                            <p className="text-[10px] text-gray-400 uppercase mb-3 font-bold">Statistics</p>
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="bg-gray-900/50 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-green-400">{playerStats.length}</div>
+                                <div className="text-[10px] text-gray-500">Total Players</div>
+                              </div>
+                              <div className="bg-gray-900/50 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-blue-400">{Math.round(playerStats.reduce((a, b) => a + b.gamesPlayed, 0) / playerStats.length)}</div>
+                                <div className="text-[10px] text-gray-500">Avg Games</div>
+                              </div>
+                              <div className="bg-gray-900/50 p-3 rounded-lg text-center">
+                                <div className="text-2xl font-bold text-orange-400">{Math.max(...playerStats.map(s => s.gamesPlayed))}</div>
+                                <div className="text-[10px] text-gray-500">Most Games</div>
+                              </div>
+                            </div>
                           </div>
                        </div>
                     ) : (

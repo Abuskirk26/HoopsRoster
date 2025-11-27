@@ -1,4 +1,4 @@
-import { Player, PlayerStatus, PlayerStats } from '../types';
+import { Player, PlayerStatus, PlayerStats, GameScore } from '../types';
 import { MOCK_PLAYER_STATS } from '../constants';
 
 export const syncRosterFromSheet = async (url: string): Promise<Player[] | null> => {
@@ -13,22 +13,37 @@ export const syncRosterFromSheet = async (url: string): Promise<Player[] | null>
   }
 };
 
-export const getGameScore = async (url: string): Promise<{scoreA: number, scoreB: number} | null> => {
-  if (!url) return { scoreA: 0, scoreB: 0 };
+export const getGameScore = async (url: string): Promise<GameScore | null> => {
+  if (!url) return { scoreA: 0, scoreB: 0, teamA: "Team A", teamB: "Team B", prevScoreA: 0, prevScoreB: 0, finalScore: 0 };
   try {
     const separator = url.includes('?') ? '&' : '?';
     const response = await fetch(`${url}${separator}action=GET_SCORE`, { method: 'GET' });
     const json = await response.json();
-    if (json.status === 'success') return { scoreA: json.scoreA, scoreB: json.scoreB };
+    if (json.status === 'success') return { 
+      scoreA: json.scoreA, 
+      scoreB: json.scoreB,
+      teamA: json.teamA || "Team A",
+      teamB: json.teamB || "Team B",
+      prevScoreA: json.prevScoreA || 0,
+      prevScoreB: json.prevScoreB || 0,
+      finalScore: json.finalScore || 0
+    };
     return null;
   } catch (error) {
     return null;
   }
 };
 
-export const updateGameScore = async (url: string, scoreA: number, scoreB: number, actorName: string) => {
+export const updateGameScore = async (url: string, scoreA: number, scoreB: number, actorName: string, prevScoreA?: number, prevScoreB?: number) => {
   if (!url) return;
-  await sendPost(url, { action: 'UPDATE_SCORE', scoreA: scoreA, scoreB: scoreB, actor: actorName });
+  await sendPost(url, { 
+    action: 'UPDATE_SCORE', 
+    scoreA, 
+    scoreB, 
+    actor: actorName,
+    prevScoreA: prevScoreA || 0,
+    prevScoreB: prevScoreB || 0
+  });
 };
 
 export const getPlayerStats = async (url: string): Promise<PlayerStats[] | null> => {

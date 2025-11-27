@@ -123,6 +123,19 @@ const PlayerForm: React.FC<PlayerFormProps> = ({ isOpen, onClose, onSubmit, onDe
           )}
           <div className="pt-2 space-y-3">
              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg"> {initialData ? 'Save Changes' : 'Create Profile'} </button>
+             {initialData && onDelete && (
+               <button 
+                 type="button" 
+                 onClick={() => {
+                   if (window.confirm(`Delete ${initialData.name}? This cannot be undone.`)) {
+                     onDelete(initialData.id);
+                   }
+                 }} 
+                 className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 font-bold py-3 rounded-xl border border-red-600/50 flex items-center justify-center gap-2"
+               >
+                 <Trash2 className="w-4 h-4" /> Delete Account
+               </button>
+             )}
              {isAdminMode && initialData && onDelete && <button type="button" onClick={() => onDelete(initialData.id)} className="w-full bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 font-bold py-3 rounded-xl flex items-center justify-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Delete Profile</button>}
           </div>
         </form>

@@ -7,10 +7,18 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
+    server: {
+      host: '0.0.0.0',
+      port: 5000,
+      allowedHosts: ['.replit.dev'],
+      hmr: {
+        clientPort: 443,
+        protocol: 'wss'
+      }
+    },
     define: {
-      // Polyfill process.env for the Google GenAI SDK
-      'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY),
-      'process.env': process.env
+      // Polyfill process.env.API_KEY for the Google GenAI SDK
+      'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY)
     }
   }
 })

@@ -36,6 +36,16 @@ export interface GeneratedTeams {
   strategy: string;
 }
 
+export interface GameScore {
+  scoreA: number;
+  scoreB: number;
+  teamA?: string;
+  teamB?: string;
+  prevScoreA?: number;
+  prevScoreB?: number;
+  finalScore?: number;
+}
+
 export interface AppConfig {
   googleSheetUrl?: string;
   lastSync?: number;
