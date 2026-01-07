@@ -1,11 +1,23 @@
 import { Player, PlayerStatus, PlayerStats, GameScore } from '../types';
 import { MOCK_PLAYER_STATS } from '../constants';
 
-export const syncRosterFromSheet = async (url: string): Promise<Player[] | null> => {
+export type RosterSyncPayload = {
+  players: Player[];
+  maxPlayers?: number;
+  announcement?: string;
+};
+
+export const syncRosterFromSheet = async (url: string): Promise<RosterSyncPayload | null> => {
   try {
     const response = await fetch(url, { method: 'GET' });
     const json = await response.json();
-    if (json.status === 'success' && Array.isArray(json.data)) return json.data;
+    if (json.status === 'success' && Array.isArray(json.data)) {
+      return {
+        players: json.data,
+        maxPlayers: typeof json.maxPlayers === 'number' ? json.maxPlayers : undefined,
+        announcement: typeof json.announcement === 'string' ? json.announcement : undefined,
+      };
+    }
     return null;
   } catch (error) {
     console.error("Failed to fetch roster:", error);
@@ -81,6 +93,14 @@ export const deletePlayerOnSheet = async (url: string, playerId: string, actorNa
 
 export const resetWeekOnSheet = async (url: string, actorName: string, shouldArchive: boolean) => {
   await sendPost(url, { action: 'RESET_WEEK', shouldArchive: shouldArchive, actor: actorName });
+};
+
+export const updateMaxPlayersOnSheet = async (url: string, maxPlayers: number, actorName: string) => {
+  await sendPost(url, { action: 'UPDATE_SETTINGS', maxPlayers, actor: actorName });
+};
+
+export const updateAnnouncementOnSheet = async (url: string, announcement: string, actorName: string) => {
+  await sendPost(url, { action: 'UPDATE_SETTINGS', announcement, actor: actorName });
 };
 
 const sendPost = async (url: string, data: any) => {

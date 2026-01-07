@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Player, PlayerStatus, Tier, AppConfig, PlayerStats } from './types';
-import { INITIAL_PLAYERS, MAX_PLAYERS } from './constants';
+import { INITIAL_PLAYERS, DEFAULT_MAX_PLAYERS } from './constants';
 import PlayerCard from './components/PlayerCard';
 import TeamBuilder from './components/TeamBuilder';
 import PlayerForm from './components/PlayerForm';
 import Scoreboard from './components/Scoreboard';
 import { generateInviteMessage } from './services/geminiService';
-import { syncRosterFromSheet, initializeSheet, updatePlayerStatusOnSheet, resetWeekOnSheet, createPlayerOnSheet, updatePlayerDetailsOnSheet, getPlayerStats, deletePlayerOnSheet } from './services/sheetService';
+import { syncRosterFromSheet, initializeSheet, updatePlayerStatusOnSheet, resetWeekOnSheet, createPlayerOnSheet, updatePlayerDetailsOnSheet, getPlayerStats, deletePlayerOnSheet, updateMaxPlayersOnSheet, updateAnnouncementOnSheet } from './services/sheetService';
 import { Calendar, Users, Trophy, Share2, MessageSquare, Lock, Shield, LogOut, Database, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, UserPlus, Search, BarChart3, History, FilterX, ChevronRight, Send, XCircle, MonitorPlay, Trash, UserCog, User, Check } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -27,6 +27,9 @@ const getNextGameDate = () => {
   d.setDate(d.getDate() + diff);
   return d;
 };
+
+type GroupTextStatusFilter = 'ALL' | 'IN' | 'WAITLIST' | 'OUT' | 'PENDING';
+type GroupTextTierFilter = 'ALL' | '1' | '2' | '3';
 
 export const App: React.FC = () => {
   // --- STATE ---
@@ -91,9 +94,14 @@ export const App: React.FC = () => {
 
   // Toast State
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
+  const [maxPlayersDraft, setMaxPlayersDraft] = useState<string>(() => String(config.maxPlayers ?? DEFAULT_MAX_PLAYERS));
+  const [announcementDraft, setAnnouncementDraft] = useState<string>(() => config.announcement ?? "");
+  const [groupTextStatusFilter, setGroupTextStatusFilter] = useState<GroupTextStatusFilter>('ALL');
+  const [groupTextTierFilter, setGroupTextTierFilter] = useState<GroupTextTierFilter>('ALL');
 
   const currentUser = useMemo(() => players.find(p => p.id === currentUserId) || null, [players, currentUserId]);
   const isAdmin = currentUser?.isAdmin === true;
+  const maxPlayers = config.maxPlayers ?? DEFAULT_MAX_PLAYERS;
 
   // --- EFFECTS ---
 
@@ -113,6 +121,14 @@ export const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
   }, [config]);
 
+  useEffect(() => {
+    setMaxPlayersDraft(String(maxPlayers));
+  }, [maxPlayers]);
+
+  useEffect(() => {
+    setAnnouncementDraft(config.announcement ?? "");
+  }, [config.announcement]);
+
   // Initial Sync on Mount
   useEffect(() => {
     if (config.googleSheetUrl) {
@@ -129,7 +145,7 @@ export const App: React.FC = () => {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [config.googleSheetUrl]);
+  }, [config.googleSheetUrl, config.maxPlayers, players.length]);
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({msg, type});
@@ -140,9 +156,17 @@ export const App: React.FC = () => {
     if (!config.googleSheetUrl) return;
     setIsSyncing(true);
     setSyncStatus('idle');
-    const remotePlayers = await syncRosterFromSheet(config.googleSheetUrl);
-    if (remotePlayers) {
-      setPlayers(remotePlayers);
+    const remotePayload = await syncRosterFromSheet(config.googleSheetUrl);
+    if (remotePayload) {
+      const nextMaxPlayers = remotePayload.maxPlayers ?? config.maxPlayers ?? DEFAULT_MAX_PLAYERS;
+      if (typeof remotePayload.maxPlayers === 'number') {
+        setConfig(prev => ({ ...prev, maxPlayers: remotePayload.maxPlayers }));
+      }
+      if (typeof remotePayload.announcement === 'string') {
+        const trimmed = remotePayload.announcement.trim();
+        setConfig(prev => ({ ...prev, announcement: trimmed ? trimmed : undefined }));
+      }
+      setPlayers(recalculateRosterStatus(remotePayload.players, nextMaxPlayers));
       setSyncStatus('success');
     } else {
       if (players.length > 0) setSyncStatus('error');
@@ -169,7 +193,7 @@ export const App: React.FC = () => {
 
   // --- BUSINESS LOGIC ---
 
-  const recalculateRosterStatus = (currentList: Player[]): Player[] => {
+  const recalculateRosterStatus = (currentList: Player[], cap: number): Player[] => {
     const hopefuls = currentList.filter(p => p.status === PlayerStatus.IN || p.status === PlayerStatus.WAITLIST);
     
     hopefuls.sort((a, b) => {
@@ -179,11 +203,45 @@ export const App: React.FC = () => {
 
     const updatedHopefuls = hopefuls.map((p, index) => ({
       ...p,
-      status: index < MAX_PLAYERS ? PlayerStatus.IN : PlayerStatus.WAITLIST
+      status: index < cap ? PlayerStatus.IN : PlayerStatus.WAITLIST
     }));
 
     const updatesMap = new Map(updatedHopefuls.map(p => [p.id, p]));
     return currentList.map(p => updatesMap.get(p.id) || p);
+  };
+
+  const handleSaveMaxPlayers = () => {
+    const raw = maxPlayersDraft.trim();
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      showToast("Enter a valid max player count", "error");
+      return;
+    }
+
+    const nextCap = Math.max(1, Math.min(50, parsed));
+    setConfig(prev => ({ ...prev, maxPlayers: nextCap }));
+
+    setPlayers(prev => {
+      const next = recalculateRosterStatus(prev, nextCap);
+
+      if (config.googleSheetUrl) {
+        const actor = currentUser?.name || "Admin";
+
+        void updateMaxPlayersOnSheet(config.googleSheetUrl, nextCap, actor);
+
+        const prevById = new Map(prev.map(p => [p.id, p.status]));
+        next.forEach(p => {
+          const before = prevById.get(p.id);
+          if (before && before !== p.status) {
+            void updatePlayerStatusOnSheet(config.googleSheetUrl!, p.id, p.status, p.timestamp, actor);
+          }
+        });
+      }
+
+      return next;
+    });
+
+    showToast(`Max RSVPs set to ${nextCap}`, "success");
   };
 
   const handleStatusChange = (id: string, newStatus: PlayerStatus) => {
@@ -199,7 +257,7 @@ export const App: React.FC = () => {
         if (isJoiningPool && !wasInPool) finalTimestamp = timestamp;
         return { ...p, status: newStatus, timestamp: finalTimestamp };
       });
-      return recalculateRosterStatus(withUpdatedIntent);
+      return recalculateRosterStatus(withUpdatedIntent, maxPlayers);
     });
 
     if (config.googleSheetUrl) {
@@ -253,7 +311,7 @@ export const App: React.FC = () => {
        }));
 
        // Recalculate roster if Tier changed
-       setPlayers(prev => recalculateRosterStatus(prev));
+       setPlayers(prev => recalculateRosterStatus(prev, maxPlayers));
        showToast("Player profile updated");
 
        if (config.googleSheetUrl) {
@@ -307,8 +365,82 @@ export const App: React.FC = () => {
   };
 
   const handleWaitlistMessage = () => {
-      const msg = "Sorry we are at capacity (12/12) this week! You didn't make the group but we appreciate your interest and will have you at top priority to join next week if you are available.";
+      const msg = `Sorry we are at capacity (${maxPlayers}/${maxPlayers}) this week! You didn't make the group but we appreciate your interest and will have you at top priority to join next week if you are available.`;
       triggerShare(msg);
+  };
+
+  const normalizePhoneForGroupText = (raw: string): string => {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return "";
+
+    if (trimmed.startsWith('+')) {
+      const digits = trimmed.slice(1).replace(/[^\d]/g, '');
+      return digits ? `+${digits}` : "";
+    }
+
+    const digits = trimmed.replace(/[^\d]/g, '');
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+    return digits || trimmed;
+  };
+
+  const groupTextPlayers = useMemo(() => {
+    const desiredTier = groupTextTierFilter === 'ALL' ? null : Number(groupTextTierFilter);
+    return players.filter(p => {
+      if (!p.phoneNumber || !String(p.phoneNumber).trim()) return false;
+      if (desiredTier && p.tier !== desiredTier) return false;
+      if (groupTextStatusFilter === 'ALL') return true;
+      if (groupTextStatusFilter === 'PENDING') return p.status === PlayerStatus.UNKNOWN;
+      return p.status === groupTextStatusFilter;
+    });
+  }, [players, groupTextStatusFilter, groupTextTierFilter]);
+
+  const groupTextPhoneList = useMemo(() => {
+    const deduped = new Set<string>();
+    groupTextPlayers.forEach(p => {
+      const normalized = normalizePhoneForGroupText(p.phoneNumber);
+      if (normalized) deduped.add(normalized);
+    });
+    return Array.from(deduped).join(', ');
+  }, [groupTextPlayers]);
+
+  const handleCopyGroupTextPhones = () => {
+    if (!groupTextPhoneList) {
+      showToast("No phone numbers match this filter", "error");
+      return;
+    }
+    copyToClipboard(groupTextPhoneList);
+  };
+
+  const handleSaveAnnouncement = () => {
+    const trimmed = announcementDraft.trim();
+    setConfig(prev => ({ ...prev, announcement: trimmed ? trimmed : undefined }));
+    showToast(trimmed ? "Announcement saved" : "Announcement cleared", "success");
+
+    if (config.googleSheetUrl) {
+      const actor = currentUser?.name || "Admin";
+      void updateAnnouncementOnSheet(config.googleSheetUrl, trimmed, actor);
+    }
+  };
+
+  const handleClearAnnouncement = () => {
+    setAnnouncementDraft("");
+    setConfig(prev => ({ ...prev, announcement: undefined }));
+    showToast("Announcement cleared", "success");
+
+    if (config.googleSheetUrl) {
+      const actor = currentUser?.name || "Admin";
+      void updateAnnouncementOnSheet(config.googleSheetUrl, "", actor);
+    }
+  };
+
+  const handleShareAnnouncement = () => {
+    const trimmed = announcementDraft.trim();
+    if (!trimmed) {
+      showToast("No announcement to share", "error");
+      return;
+    }
+    triggerShare(trimmed);
   };
 
   const triggerShare = async (msg: string) => {
@@ -458,7 +590,7 @@ export const App: React.FC = () => {
   const waitlistCount = players.filter(p => p.status === PlayerStatus.WAITLIST).length;
   const pendingCount = players.length - confirmedCount - waitlistCount;
   const formattedDate = format(getNextGameDate(), 'MMMM do');
-  const isAtCapacity = confirmedCount >= MAX_PLAYERS;
+  const isAtCapacity = confirmedCount >= maxPlayers;
 
   // --- LOGIN SCREEN ---
   if (!currentUserId) {
@@ -684,8 +816,8 @@ export const App: React.FC = () => {
                 </button>
              )}
              <div className="text-right bg-gray-800 px-3 py-1 rounded-lg border border-gray-700">
-                <div className={`text-sm font-bold ${confirmedCount === MAX_PLAYERS ? 'text-red-400' : 'text-green-400'}`}>
-                   {confirmedCount}<span className="text-gray-500">/{MAX_PLAYERS}</span>
+                <div className={`text-sm font-bold ${confirmedCount === maxPlayers ? 'text-red-400' : 'text-green-400'}`}>
+                   {confirmedCount}<span className="text-gray-500">/{maxPlayers}</span>
                 </div>
              </div>
              <button onClick={() => handleOpenEdit(currentUser!)} className="p-2 bg-gray-800 rounded-full text-gray-400 hover:text-white border border-gray-700 transition-colors" title="Edit Profile">
@@ -738,8 +870,19 @@ export const App: React.FC = () => {
                    Game at Capacity!
                 </h3>
                 <p className="text-sm text-gray-300">
-                  We have reached 12 confirmed players. New signups will be placed on the <span className="font-bold text-orange-400">Waitlist</span>.
+                  We have reached {maxPlayers} confirmed players. New signups will be placed on the <span className="font-bold text-orange-400">Waitlist</span>.
                 </p>
+              </div>
+            )}
+
+            {/* ANNOUNCEMENT BANNER */}
+            {!!(config.announcement && config.announcement.trim()) && (
+              <div className="bg-blue-900/25 border border-blue-800/60 rounded-xl p-4 animate-fade-in">
+                <h3 className="text-blue-300 font-bold text-sm mb-1 flex items-center gap-2">
+                  <MonitorPlay className="w-4 h-4" />
+                  Announcement
+                </h3>
+                <p className="text-sm text-gray-200 whitespace-pre-wrap">{config.announcement.trim()}</p>
               </div>
             )}
 
@@ -882,7 +1025,7 @@ export const App: React.FC = () => {
                     <div className="mt-8">
                        <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-2 font-bold">Live Capacity</p>
                        <div className="flex justify-center gap-1.5 flex-wrap max-w-[180px] mx-auto">
-                           {Array.from({ length: MAX_PLAYERS }).map((_, i) => (
+                           {Array.from({ length: maxPlayers }).map((_, i) => (
                                <div 
                                    key={i} 
                                    className={`w-3 h-3 rounded-full transition-colors duration-500 ${i < confirmedCount ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-700'}`}
@@ -941,23 +1084,156 @@ export const App: React.FC = () => {
                         </div>
                         
                         {/* Clear Cache Button */}
-                        <div className="border-t border-gray-700 pt-3 mt-2">
-                           <button 
-                             onClick={handleClearCache}
-                             className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 w-full justify-end"
-                           >
-                             <Trash className="w-3 h-3" /> Clear Local Cache & Reload
-                           </button>
-                        </div>
-                    </div>
-                </div>
+                          <div className="border-t border-gray-700 pt-3 mt-2">
+                             <button 
+                               onClick={handleClearCache}
+                               className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 w-full justify-end"
+                             >
+                               <Trash className="w-3 h-3" /> Clear Local Cache & Reload
+                             </button>
+                          </div>
+                      </div>
+                  </div>
 
-                {/* CONTROLS CARD */}
-                <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-                     <h3 className="text-white font-bold mb-3 flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-purple-400" />
-                        Controls
-                    </h3>
+                  {/* RSVP SETTINGS CARD */}
+                  <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+                      <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+                          <Users className="w-5 h-5 text-orange-400" />
+                          RSVP Settings
+                      </h3>
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Max confirmed RSVPs</label>
+                              <div className="flex gap-2 mt-1">
+                                  <input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min={1}
+                                      max={50}
+                                      value={maxPlayersDraft}
+                                      onChange={(e) => setMaxPlayersDraft(e.target.value)}
+                                      className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-orange-500 outline-none"
+                                  />
+                                  <button
+                                      onClick={handleSaveMaxPlayers}
+                                      className="bg-orange-600 hover:bg-orange-500 text-white px-4 rounded-lg text-xs font-bold"
+                                  >
+                                      Save
+                                  </button>
+                              </div>
+                              <p className="mt-2 text-[10px] text-gray-500 leading-relaxed">
+                                Changes apply immediately for confirmed vs waitlist, and will sync to the shared sheet when connected.
+                              </p>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* ANNOUNCEMENT + GROUP TEXT CARD */}
+                  <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+                      <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+                          <MonitorPlay className="w-5 h-5 text-blue-400" />
+                          Announcement
+                      </h3>
+
+                      <div className="space-y-3">
+                          <div>
+                              <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Message (shows to everyone)</label>
+                              <textarea
+                                  value={announcementDraft}
+                                  onChange={(e) => setAnnouncementDraft(e.target.value)}
+                                  placeholder="Example: Gym is closed tonight — game cancelled."
+                                  rows={3}
+                                  className="w-full mt-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                              />
+                              <div className="flex gap-2 mt-2">
+                                  <button
+                                      onClick={handleSaveAnnouncement}
+                                      className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-bold"
+                                  >
+                                      Save
+                                  </button>
+                                  <button
+                                      onClick={handleShareAnnouncement}
+                                      disabled={!announcementDraft.trim()}
+                                      className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                                  >
+                                      Share
+                                  </button>
+                                  <button
+                                      onClick={handleClearAnnouncement}
+                                      disabled={!announcementDraft.trim() && !(config.announcement && config.announcement.trim())}
+                                      className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg text-xs font-bold disabled:opacity-50"
+                                  >
+                                      Clear
+                                  </button>
+                              </div>
+                          </div>
+
+                          <div className="border-t border-gray-700 pt-3">
+                              <div className="flex items-end gap-2">
+                                  <div className="flex-1">
+                                      <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Group text filter</label>
+                                      <select
+                                          value={groupTextStatusFilter}
+                                          onChange={(e) => setGroupTextStatusFilter(e.target.value as GroupTextStatusFilter)}
+                                          className="w-full mt-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-blue-500 outline-none"
+                                      >
+                                          <option value="ALL">All statuses</option>
+                                          <option value="IN">Playing (IN)</option>
+                                          <option value="WAITLIST">Waitlist</option>
+                                          <option value="OUT">Out</option>
+                                          <option value="PENDING">Pending</option>
+                                      </select>
+                                  </div>
+
+                                  <div className="w-28">
+                                      <label className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Tier</label>
+                                      <select
+                                          value={groupTextTierFilter}
+                                          onChange={(e) => setGroupTextTierFilter(e.target.value as GroupTextTierFilter)}
+                                          className="w-full mt-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-blue-500 outline-none"
+                                      >
+                                          <option value="ALL">All</option>
+                                          <option value="1">1</option>
+                                          <option value="2">2</option>
+                                          <option value="3">3</option>
+                                      </select>
+                                  </div>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-2">
+                                  <div className="text-[10px] text-gray-500">
+                                      Matches: <span className="text-gray-300 font-bold">{groupTextPlayers.length}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <button
+                                          onClick={() => {
+                                            const trimmed = announcementDraft.trim();
+                                            if (!trimmed) { showToast("No announcement text to copy", "error"); return; }
+                                            copyToClipboard(trimmed);
+                                          }}
+                                          className="text-[10px] bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded-lg transition-colors"
+                                      >
+                                          Copy message
+                                      </button>
+                                      <button
+                                          onClick={handleCopyGroupTextPhones}
+                                          className="text-[10px] bg-gray-700 hover:bg-gray-600 text-white px-2 py-1 rounded-lg transition-colors"
+                                      >
+                                          Copy numbers
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* CONTROLS CARD */}
+                  <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+                       <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+                          <Calendar className="w-5 h-5 text-purple-400" />
+                          Controls
+                      </h3>
                     <div className="flex gap-3">
                         <button 
                             onClick={handleResetWeek}
