@@ -1,6 +1,6 @@
 import { Player, PlayerStatus, Tier, PlayerStats } from './types';
 
-export const MAX_PLAYERS = 12;
+export const DEFAULT_MAX_PLAYERS = 12;
 
 export const INITIAL_PLAYERS: Player[] = [
   { id: '1', name: 'LeBron J.', tier: Tier.ONE, status: PlayerStatus.UNKNOWN, isAdmin: true, phoneNumber: '555-555-0101', pin: '1111', email: 'king@hoops.com' },

@@ -2,6 +2,54 @@ const SHEET_ROSTER = "Roster";
 const SHEET_LOGS = "Audit_Logs";
 const SHEET_HISTORY = "Game_History";
 const SHEET_SCORE = "Current_Score";
+const SHEET_SETTINGS = "Settings";
+
+const DEFAULT_MAX_PLAYERS = 12;
+const SETTINGS_KEY_MAX_PLAYERS = "maxPlayers";
+const SETTINGS_KEY_ANNOUNCEMENT = "announcement";
+
+function getOrCreateSettingsSheet(ss) {
+  let settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
+  if (!settingsSheet) {
+    settingsSheet = ss.insertSheet(SHEET_SETTINGS);
+    settingsSheet.appendRow(["Key", "Value"]);
+    settingsSheet.setFrozenRows(1);
+  }
+  return settingsSheet;
+}
+
+function getSetting(settingsSheet, key, defaultValue) {
+  const data = settingsSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === key) {
+      const asNumber = Number(data[i][1]);
+      return isNaN(asNumber) ? defaultValue : asNumber;
+    }
+  }
+  return defaultValue;
+}
+
+function getSettingText(settingsSheet, key, defaultValue) {
+  const data = settingsSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === key) {
+      const value = data[i][1];
+      return value === null || value === undefined ? defaultValue : String(value);
+    }
+  }
+  return defaultValue;
+}
+
+function setSetting(settingsSheet, key, value) {
+  const data = settingsSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === key) {
+      settingsSheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  settingsSheet.appendRow([key, value]);
+}
 
 function doGet(e) {
   const lock = LockService.getScriptLock();
@@ -42,7 +90,10 @@ function doGet(e) {
     const pIdx = currentHeaders.indexOf("PIN");
     const rows = data.slice(1);
     const players = rows.map(row => { return { id: String(row[0]), name: row[1], tier: Number(row[2]), status: row[3], phoneNumber: row[4], timestamp: row[5] ? new Date(row[5]).getTime() : null, isAdmin: row[6] === true || row[6] === "true", email: (eIdx > -1 && row[eIdx]) ? row[eIdx] : "", pin: (pIdx > -1 && row[pIdx]) ? String(row[pIdx]) : "" }; });
-    return successResponse({ data: players });
+    const settingsSheet = getOrCreateSettingsSheet(ss);
+    const maxPlayers = getSetting(settingsSheet, SETTINGS_KEY_MAX_PLAYERS, DEFAULT_MAX_PLAYERS);
+    const announcement = getSettingText(settingsSheet, SETTINGS_KEY_ANNOUNCEMENT, "");
+    return successResponse({ data: players, maxPlayers: maxPlayers, announcement: announcement });
   } catch (e) { return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: e.toString() })).setMimeType(ContentService.MimeType.JSON); } finally { lock.releaseLock(); }
 }
 
@@ -57,6 +108,7 @@ function doPost(e) {
     if (!logSheet) { logSheet = ss.insertSheet(SHEET_LOGS); logSheet.appendRow(["Timestamp", "Action", "Actor", "Details"]); }
     let rosterSheet = ss.getSheetByName(SHEET_ROSTER);
     if (!rosterSheet) { rosterSheet = ss.insertSheet(SHEET_ROSTER); rosterSheet.appendRow(["ID", "Name", "Tier", "Status", "Phone", "Timestamp", "IsAdmin", "Email", "PIN"]); }
+    const settingsSheet = getOrCreateSettingsSheet(ss);
     const getHeaderMap = () => {
       const headers = rosterSheet.getRange(1, 1, 1, rosterSheet.getLastColumn()).getValues()[0];
       return { name: headers.indexOf("Name") + 1, tier: headers.indexOf("Tier") + 1, status: headers.indexOf("Status") + 1, phone: headers.indexOf("Phone") + 1, ts: headers.indexOf("Timestamp") + 1, admin: headers.indexOf("IsAdmin") + 1, email: headers.indexOf("Email") + 1, pin: headers.indexOf("PIN") + 1 };
@@ -103,6 +155,29 @@ function doPost(e) {
        if (numRows > 1) { rosterSheet.getRange(2, map.status, numRows - 1, 1).setValue("UNKNOWN"); rosterSheet.getRange(2, map.ts, numRows - 1, 1).setValue(""); }
        logAction(logSheet, "RESET_WEEK", payload.actor, payload.shouldArchive ? "Reset and Archived" : "Reset without Archive");
        return successResponse({ message: "Reset Complete" });
+    }
+    if (action === 'UPDATE_SETTINGS') {
+      let nextMaxPlayers = null;
+      if (payload.maxPlayers !== undefined && payload.maxPlayers !== null) {
+        const parsedMaxPlayers = Number(payload.maxPlayers);
+        nextMaxPlayers = Math.max(1, Math.min(50, isNaN(parsedMaxPlayers) ? DEFAULT_MAX_PLAYERS : Math.floor(parsedMaxPlayers)));
+        setSetting(settingsSheet, SETTINGS_KEY_MAX_PLAYERS, nextMaxPlayers);
+      }
+
+      let nextAnnouncement = null;
+      if (payload.announcement !== undefined) {
+        nextAnnouncement = payload.announcement === null ? "" : String(payload.announcement);
+        setSetting(settingsSheet, SETTINGS_KEY_ANNOUNCEMENT, nextAnnouncement);
+      }
+
+      const parts = [];
+      if (nextMaxPlayers !== null) parts.push(`maxPlayers=${nextMaxPlayers}`);
+      if (nextAnnouncement !== null) parts.push(`announcement=${nextAnnouncement ? "set" : "cleared"}`);
+      logAction(logSheet, "UPDATE_SETTINGS", payload.actor, parts.length ? `Updated ${parts.join(", ")}` : "No settings updated");
+
+      const effectiveMaxPlayers = nextMaxPlayers !== null ? nextMaxPlayers : getSetting(settingsSheet, SETTINGS_KEY_MAX_PLAYERS, DEFAULT_MAX_PLAYERS);
+      const effectiveAnnouncement = nextAnnouncement !== null ? nextAnnouncement : getSettingText(settingsSheet, SETTINGS_KEY_ANNOUNCEMENT, "");
+      return successResponse({ message: "Settings Updated", maxPlayers: effectiveMaxPlayers, announcement: effectiveAnnouncement });
     }
     return successResponse({ message: "Unknown Action" });
   } catch (e) { return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: e.toString() })).setMimeType(ContentService.MimeType.JSON); } finally { lock.releaseLock(); }

@@ -49,4 +49,6 @@ export interface GameScore {
 export interface AppConfig {
   googleSheetUrl?: string;
   lastSync?: number;
+  maxPlayers?: number;
+  announcement?: string;
 }
